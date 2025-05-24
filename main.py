@@ -1,18 +1,18 @@
 import cv2
 from face_recog import FaceRecognition
 from object_detect import detect_objects
-from draw_zone import draw_zones_on_stream, draw_zones_on_frame
+from draw_zone import draw_zones_on_stream, draw_polygons_on_frame
+import numpy as np
 
-def intersection_area(boxA, boxB):
-    xA = max(boxA[0], boxB[0])
-    yA = max(boxA[1], boxB[1])
-    xB = min(boxA[2], boxB[2])
-    yB = min(boxA[3], boxB[3])
-    interW = max(0, xB - xA)
-    interH = max(0, yB - yA)
-    return interW * interH
+def intersection_area_poly(poly, box):
+    # Polygon ve dikdörtgenin kesişim alanı (yaklaşık):
+    # Polygonu maske olarak kullanıp, box içindeki alanı sayabilirsin.
+    mask = np.zeros((box[3], box[2]), dtype=np.uint8)
+    shifted_poly = [ (x-box[0], y-box[1]) for (x,y) in poly ]
+    cv2.fillPoly(mask, [np.array(shifted_poly, np.int32)], 1)
+    return np.sum(mask)
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture("test_video.mp4")
 if not cap.isOpened():
     print("Kamera açılamadı.")
     exit()
@@ -20,8 +20,9 @@ if not cap.isOpened():
 fr = FaceRecognition()
 
 # Zone çizimi için fonksiyonu çağır
-zones = draw_zones_on_stream(cap)
+zones, zone_labels = draw_zones_on_stream(cap)
 print('Çizilen zone:', zones)
+print('Zone etiketleri:', zone_labels)
 
 # Artık ana akışa geç
 while True:
@@ -33,18 +34,17 @@ while True:
     detected_objects = detect_objects(frame)
 
     # Zone'ları şeffaf dolgu ve kenarlıkla çiz
-    frame = draw_zones_on_frame(frame, zones)
+    frame = draw_polygons_on_frame(frame, zones, labels=zone_labels)
 
     for class_id, class_name, score, (x1, y1, x2, y2), track_id in detected_objects:
         track_text = f'ID:{track_id}' if track_id is not None else ''
         if class_id == 0:  # person
-            for rect in zones:
-                (zx1, zy1), (zx2, zy2) = rect
-                zone_xmin, zone_xmax = min(zx1, zx2), max(zx1, zx2)
-                zone_ymin, zone_ymax = min(zy1, zy2), max(zy1, zy2)
-                obj_area = (x2 - x1) * (y2 - y1)
-                inter_area = intersection_area((x1, y1, x2, y2), (zone_xmin, zone_ymin, zone_xmax, zone_ymax))
-                if obj_area > 0 and (inter_area / obj_area) >= 0.7:
+            for poly in zones:
+                # Kesişim oranı için polygon ve box kullanımı
+                box = (x1, y1, x2, y2)
+                # Basit alan kontrolü: kutunun merkezi polygon içinde mi?
+                center = ((x1+x2)//2, (y1+y2)//2)
+                if cv2.pointPolygonTest(np.array(poly, np.int32), center, False) >= 0:
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
                     cv2.putText(frame, f'{class_name} {score:.2f} {track_text}', (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
                     person_crop = frame[y1:y2, x1:x2]
@@ -60,13 +60,10 @@ while True:
                         cv2.rectangle(frame, (abs_left, abs_top), (abs_right, abs_bottom), (255,0,0), 2)
                         cv2.putText(frame, label, (abs_left, abs_top-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1)
         else:
-            for rect in zones:
-                (zx1, zy1), (zx2, zy2) = rect
-                zone_xmin, zone_xmax = min(zx1, zx2), max(zx1, zx2)
-                zone_ymin, zone_ymax = min(zy1, zy2), max(zy1, zy2)
-                obj_area = (x2 - x1) * (y2 - y1)
-                inter_area = intersection_area((x1, y1, x2, y2), (zone_xmin, zone_ymin, zone_xmax, zone_ymax))
-                if obj_area > 0 and (inter_area / obj_area) >= 0.7:
+            for poly in zones:
+                box = (x1, y1, x2, y2)
+                center = ((x1+x2)//2, (y1+y2)//2)
+                if cv2.pointPolygonTest(np.array(poly, np.int32), center, False) >= 0:
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0,0,255), 2)
                     cv2.putText(frame, f'{class_name} {score:.2f} {track_text}', (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1)
 

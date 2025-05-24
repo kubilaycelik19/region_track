@@ -1,53 +1,75 @@
 import cv2
+import numpy as np
 
 drawing = False
-ix, iy = -1, -1
-rectangles = []
+polygon_points = []
+polygons = []
+polygon_labels = []
 current_frame = None  # Güncel frame'i global olarak tut
 
-# Fare olaylarını işleyecek fonksiyon
-def draw_rectangle(event, x, y, flags, param):
-    global ix, iy, drawing, rectangles, frame_with_rectangles, current_frame
+# Renk paleti
+FILL_COLORS = [(0,255,255), (0,0,255), (255,0,0), (0,255,0), (255,0,255), (255,255,0), (0,128,255), (128,0,255)]
+BORDER_COLORS = [(0,200,200), (0,0,200), (200,0,0), (0,200,0), (200,0,200), (200,200,0), (0,100,200), (100,0,200)]
+
+# Fare olaylarını işleyecek fonksiyon (4 köşe polygon)
+def mouse_callback(event, x, y, flags, param):
+    global polygon_points, polygons, polygon_labels
     if event == cv2.EVENT_LBUTTONDOWN:
-        drawing = True
-        ix, iy = x, y
-    elif event == cv2.EVENT_MOUSEMOVE:
-        if drawing:
-            img_copy = frame_with_rectangles.copy()
-            cv2.rectangle(img_copy, (ix, iy), (x, y), (0, 255, 0), 2)
-            cv2.imshow('Canli Akis', img_copy)
-    elif event == cv2.EVENT_LBUTTONUP:
-        drawing = False
-        rectangles.append(((ix, iy), (x, y)))
-        frame_with_rectangles = current_frame.copy()  # frame yerine current_frame
-        for rect in rectangles:
-            cv2.rectangle(frame_with_rectangles, rect[0], rect[1], (0, 255, 0), 2)
-        cv2.imshow('Canli Akis', frame_with_rectangles)
+        polygon_points.append((x, y))
+        if len(polygon_points) == 4:
+            polygons.append(polygon_points.copy())
+            # Kullanıcıdan label al
+            label = input(f"{len(polygons)}. alan için etiket girin: ")
+            polygon_labels.append(label)
+            polygon_points = []
+
+def draw_polygons_on_frame(frame, polygons, labels=None, active_points=None, fill_colors=None, border_colors=None, alpha=0.4):
+    if fill_colors is None:
+        fill_colors = FILL_COLORS
+    if border_colors is None:
+        border_colors = BORDER_COLORS
+    overlay = frame.copy()
+    for i, pts in enumerate(polygons):
+        pts_np = np.array(pts, np.int32).reshape((-1, 1, 2))
+        cv2.fillPoly(overlay, [pts_np], fill_colors[i % len(fill_colors)])
+        cv2.polylines(frame, [pts_np], isClosed=True, color=border_colors[i % len(border_colors)], thickness=3)
+        # Alanın ortasına label yaz
+        if labels is not None and i < len(labels):
+            M = cv2.moments(pts_np)
+            if M["m00"] != 0:
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
+                cv2.putText(frame, str(labels[i]), (pts[0][0], pts[0][1]), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255,255,255), 3)
+    # Aktif işaretlenen noktaları göster
+    if active_points is not None and len(active_points) > 0:
+        for pt in active_points:
+            cv2.circle(frame, pt, 6, (255,255,255), -1)
+        if len(active_points) > 1:
+            cv2.polylines(frame, [np.array(active_points, np.int32).reshape((-1, 1, 2))], False, (255,255,255), 2)
+    return cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
 
 def draw_zones_on_stream(cap):
-    global frame_with_rectangles, rectangles, current_frame
-    rectangles = []
+    global current_frame, polygons, polygon_points, polygon_labels
+    polygons = []
+    polygon_points = []
+    polygon_labels = []
     cv2.namedWindow('Canli Akis')
-    cv2.setMouseCallback('Canli Akis', draw_rectangle)
+    cv2.setMouseCallback('Canli Akis', mouse_callback)
     while True:
         ret, frame = cap.read()
         if not ret:
             print("Kare alınamadı.")
             exit()
         frame = cv2.flip(frame, 1)
-        current_frame = frame  # Her döngüde güncelleniyor
-        if 'frame_with_rectangles' not in globals():
-            frame_with_rectangles = frame.copy()
-        else:
-            frame_with_rectangles = frame.copy()
-            for rect in rectangles:
-                cv2.rectangle(frame_with_rectangles, rect[0], rect[1], (0, 255, 0), 2)
-        cv2.imshow('Canli Akis', frame_with_rectangles)
+        current_frame = frame
+        temp_frame = frame.copy()
+        temp_frame = draw_polygons_on_frame(temp_frame, polygons, labels=polygon_labels, active_points=polygon_points)
+        cv2.imshow('Canli Akis', temp_frame)
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q') or key == ord('s'):
             break
-    cv2.setMouseCallback('Canli Akis', lambda *a: None) # Mouse olaylarını kapat
-    return rectangles.copy()
+    cv2.setMouseCallback('Canli Akis', lambda *a: None)
+    return polygons.copy(), polygon_labels.copy()
 
 def draw_zones_on_frame(frame, zones, fill_color=(0,255,255), border_color=(0,255,255), alpha=0.2):
     """

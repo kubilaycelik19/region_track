@@ -23,7 +23,7 @@ def detect_objects(frame):
     Verilen bir frame üzerinde YOLO ile nesne tespiti ve takip (tracking) yapar.
     Her nesne için (class_id, class_name, skor, (x1, y1, x2, y2), track_id) döndürür.
     """
-    results = model.track(frame, verbose=False)
+    results = model.track(frame, verbose=False, conf=0.7)
     boxes = results[0].boxes.xyxy.cpu().numpy()  # [x1, y1, x2, y2]
     classes = results[0].boxes.cls.cpu().numpy()  # class id'leri
     scores = results[0].boxes.conf.cpu().numpy()  # skorlar
