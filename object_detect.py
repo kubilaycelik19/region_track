@@ -20,17 +20,18 @@ model = YOLO('yolov8n.pt')
 
 def detect_objects(frame):
     """
-    Verilen bir frame üzerinde YOLO ile nesne tespiti yapar.
-    Her nesne için (class_id, class_name, skor, (x1, y1, x2, y2)) döndürür.
+    Verilen bir frame üzerinde YOLO ile nesne tespiti ve takip (tracking) yapar.
+    Her nesne için (class_id, class_name, skor, (x1, y1, x2, y2), track_id) döndürür.
     """
-    results = model(frame, verbose=False)
+    results = model.track(frame, verbose=False)
     boxes = results[0].boxes.xyxy.cpu().numpy()  # [x1, y1, x2, y2]
     classes = results[0].boxes.cls.cpu().numpy()  # class id'leri
     scores = results[0].boxes.conf.cpu().numpy()  # skorlar
+    track_ids = results[0].boxes.id.cpu().numpy() if hasattr(results[0].boxes, 'id') and results[0].boxes.id is not None else [None]*len(boxes)
     detected = []
-    for box, cls, score in zip(boxes, classes, scores):
+    for box, cls, score, track_id in zip(boxes, classes, scores, track_ids):
         class_id = int(cls)
         class_name = COCO_CLASSES[class_id] if class_id < len(COCO_CLASSES) else str(class_id)
         x1, y1, x2, y2 = map(int, box)
-        detected.append((class_id, class_name, float(score), (x1, y1, x2, y2)))
+        detected.append((class_id, class_name, float(score), (x1, y1, x2, y2), int(track_id) if track_id is not None else None))
     return detected
