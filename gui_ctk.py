@@ -1,3 +1,4 @@
+# Gerekli kütüphanelerin import edilmesi
 import customtkinter as ctk
 import tkinter as tk
 from PIL import Image, ImageTk, ImageDraw
@@ -7,31 +8,41 @@ from face_recog import FaceRecognition
 from tkinter import messagebox
 from object_detect import detect_objects
 
+# Alan listesi için özel widget sınıfı
 class AreaListBox(ctk.CTkFrame):
     def __init__(self, master, area_name, remove_callback, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
         self.remove_callback = remove_callback
+        # Alan başlığı için frame
         self.label_frame = ctk.CTkFrame(self)
         self.label_frame.pack(fill="x", padx=0, pady=0)
+        # Alan ismi etiketi
         self.label = ctk.CTkLabel(self.label_frame, text=area_name, font=("Arial", 14, "bold"))
         self.label.pack(side="left", anchor="w", padx=5, pady=(5, 0))
+        # Alan silme butonu
         self.remove_btn = ctk.CTkButton(self.label_frame, text="Sil", width=40, fg_color="#c00", hover_color="#a00", command=self.remove_area)
         self.remove_btn.pack(side="right", padx=5, pady=2)
-        self.listbox = tk.Listbox(self, height=4, width=25, bg="#222", fg="#fff", selectbackground="#444")
-        self.listbox.pack(fill="x", padx=5, pady=(0, 10))
-        self.listbox.bind("<Button-3>", self.on_right_click)
+        
+        # Kişi listesi
+        self.listbox = tk.Listbox(self, height=4, width=25, bg="white", fg="black", selectbackground="#e0e0e0") # Listbox widget'ı oluşturuluyor
+        self.listbox.pack(fill="x", padx=5, pady=(0, 10)) # Listbox widget'ı paketleniyor
+        self.listbox.bind("<Button-3>", self.on_right_click) # Listbox widget'ına sağ tıklama olayı bağlanıyor
 
+    # Kişi ekleme metodu
     def add_person(self, name):
         if name not in self.listbox.get(0, tk.END):
             self.listbox.insert(tk.END, name)
 
+    # Listeyi temizleme metodu
     def clear_people(self):
         self.listbox.delete(0, tk.END)
 
+    # Alan silme metodu
     def remove_area(self):
         if messagebox.askyesno("Alan Sil", "Bu alanı silmek istediğinize emin misiniz?"):
             self.remove_callback(self)
 
+    # Sağ tık menüsü metodu
     def on_right_click(self, event):
         selection = self.listbox.curselection()
         if selection:
@@ -40,46 +51,60 @@ class AreaListBox(ctk.CTkFrame):
             if messagebox.askyesno("Kişi Sil", f"{name} kişisini bu alandan silmek istiyor musunuz?"):
                 self.listbox.delete(idx)
 
+# Ana uygulama sınıfı
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
+        # Pencere ayarları
         self.title("Akıllı Alan ve Yüz Takip Arayüzü (customtkinter)")
         self.geometry("1200x700")
         self.resizable(True, True)
         self.frame_width = 800
         self.frame_height = 600
+        
+        # UI bileşenlerinin başlatılması
         self.init_ui()
+        
+        # Kamera ve değişkenlerin başlatılması
         self.cap = cv2.VideoCapture(0)
         self.running = True
         self.polygon_mode = False
         self.current_points = []  # Normalized noktalar (0-1 arası oran)
         self.polygons = []        # Her polygon: [ (x_norm, y_norm), ... ]
         self.polygon_names = []
+        # Polygon renkleri (RGBA formatında)
         self.polygon_colors = [(0,255,255,100), (255,0,0,100), (0,255,0,100), (255,0,255,100), (255,255,0,100)]
         self.polygon_border_colors = [(0,200,200), (200,0,0), (0,200,0), (200,0,200), (200,200,0)]
         self.area_listboxes = []
         self.detect_mode = False
         self.last_area_for_person = {}
         self.fr = FaceRecognition()
+        
+        # Event ve UI güncellemelerinin başlatılması
         self.bind_events()
         self.name_input.configure(state="disabled")
         self.confirm_area_btn.configure(state="disabled")
         self.update_frame()
 
+    # UI bileşenlerinin oluşturulması
     def init_ui(self):
+        # Ana frame
         self.main_frame = ctk.CTkFrame(self)
         self.main_frame.pack(fill="both", expand=True)
 
+        # Sol frame (kamera görüntüsü için)
         self.left_frame = ctk.CTkFrame(self.main_frame, width=self.frame_width, height=self.frame_height)
         self.left_frame.pack(side="left", padx=10, pady=10)
         self.left_frame.pack_propagate(False)
         self.image_label = tk.Label(self.left_frame, bg="#222", width=self.frame_width, height=self.frame_height)
         self.image_label.pack(fill="both", expand=True)
 
+        # Sağ frame (kontrol paneli)
         self.right_frame = ctk.CTkFrame(self.main_frame, width=400)
         self.right_frame.pack(side="right", fill="y", padx=10, pady=10)
         self.right_frame.pack_propagate(False)
 
+        # Kontrol butonları
         self.add_area_btn = ctk.CTkButton(self.right_frame, text="Alan Ekle", command=self.start_polygon_mode)
         self.add_area_btn.pack(pady=(20, 10), fill="x")
         self.name_input = ctk.CTkEntry(self.right_frame, placeholder_text="Alan ismi girin")
@@ -89,20 +114,24 @@ class App(ctk.CTk):
         self.finish_btn = ctk.CTkButton(self.right_frame, text="Onayla", command=self.finish_areas)
         self.finish_btn.pack(pady=10, fill="x")
 
+        # Alan listeleri bölümü
         self.area_lists_label = ctk.CTkLabel(self.right_frame, text="Alanlardaki Kişiler", font=("Arial", 16, "bold"))
         self.area_lists_label.pack(pady=(30, 5))
         self.area_lists_frame = ctk.CTkFrame(self.right_frame)
         self.area_lists_frame.pack(fill="both", expand=True, padx=5, pady=5)
         self.area_listboxes = []
 
+    # Event bağlantılarının yapılması
     def bind_events(self):
         self.image_label.bind("<Button-1>", self.on_image_click)
 
+    # Kamera görüntüsünün güncellenmesi
     def update_frame(self):
         if not self.running:
             return
         ret, frame = self.cap.read()
         if ret:
+            # Görüntü işleme
             frame = cv2.flip(frame, 1)
             label_w = self.image_label.winfo_width()
             label_h = self.image_label.winfo_height()
@@ -110,7 +139,8 @@ class App(ctk.CTk):
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             img = Image.fromarray(rgb)
             draw = ImageDraw.Draw(img, 'RGBA')
-            # Kalıcı polygonları göster
+            
+            # Polygonların çizilmesi
             for i, poly in enumerate(self.polygons):
                 color = self.polygon_colors[i % len(self.polygon_colors)]
                 border = self.polygon_border_colors[i % len(self.polygon_border_colors)]
@@ -122,6 +152,8 @@ class App(ctk.CTk):
                         cx = int(sum([p[0] for p in disp_poly]) / 4)
                         cy = int(sum([p[1] for p in disp_poly]) / 4)
                         draw.text((cx-30, cy), self.polygon_names[i], fill=(255,255,255,255))
+
+            # Geçici polygon çizimi
             # Geçici polygon (4 nokta seçildiyse ve isim girilmediyse)
             if len(self.current_points) == 4 and self.name_input.cget('state') == 'normal':
                 disp_poly = [ (int(x*label_w), int(y*label_h)) for (x, y) in self.current_points ]
@@ -226,9 +258,13 @@ class App(ctk.CTk):
             return
         for area_box in self.area_listboxes:
             area_box.clear_people()
+        label_w = self.image_label.winfo_width()
+        label_h = self.image_label.winfo_height()
         for name, (x, y) in detected_people:
             for i, poly in enumerate(self.polygons):
-                if self.point_in_polygon((x, y), poly):
+                # Polygonu ekrana göre dönüştür
+                disp_poly = [ (int(px*label_w), int(py*label_h)) for (px, py) in poly ]
+                if self.point_in_polygon((x, y), disp_poly):
                     self.area_listboxes[i].add_person(name)
                     self.last_area_for_person[name] = i
                     break
