@@ -103,7 +103,7 @@ class App(ctk.CTk):
         self.right_frame.pack_propagate(False)
         # Kontrol butonları (modern renkler ve fontlar)
         self.add_area_btn = ctk.CTkButton(self.right_frame, text="Alan Ekle", font=("Segoe UI", 14, "bold"), fg_color="#3498db", hover_color="#2980b9", text_color="#fff", corner_radius=10, height=40, command=self.start_polygon_mode)
-        self.add_area_btn.pack(pady=(24, 12), fill="x")
+        self.add_area_btn.pack(pady=(8, 12), fill="x")
         self.name_input = ctk.CTkEntry(self.right_frame, placeholder_text="Alan ismi girin", font=("Segoe UI", 13), fg_color="#23272f", text_color="#fff", border_color="#3a3f4b", border_width=2, corner_radius=8)
         self.name_input.pack(pady=12, fill="x")
         self.confirm_area_btn = ctk.CTkButton(self.right_frame, text="Ekle", font=("Segoe UI", 14, "bold"), fg_color="#27ae60", hover_color="#219150", text_color="#fff", corner_radius=10, height=40, command=self.add_area)
@@ -112,10 +112,19 @@ class App(ctk.CTk):
         self.finish_btn.pack(pady=12, fill="x")
         # Alan listeleri bölümü (büyük başlık)
         self.area_lists_label = ctk.CTkLabel(self.right_frame, text="Alanlardaki Kişiler", font=("Segoe UI", 18, "bold"), text_color="#f5f5f5")
-        self.area_lists_label.pack(pady=(36, 8))
+        self.area_lists_label.pack(pady=(24, 8))
         self.area_lists_frame = ctk.CTkFrame(self.right_frame, fg_color="#181a20", corner_radius=14)
         self.area_lists_frame.pack(fill="both", expand=True, padx=8, pady=8)
         self.area_listboxes = []
+        # --- ARAMA KUTUSU ve SONUÇLARI (EN ALTA ALINDI) ---
+        self.search_frame = ctk.CTkFrame(self.right_frame, fg_color="#23272f", corner_radius=12)
+        self.search_frame.pack(side="bottom", pady=(8, 8), padx=0, fill="x")
+        self.search_entry = ctk.CTkEntry(self.search_frame, placeholder_text="Kişi ara...", font=("Segoe UI", 13), fg_color="#23272f", text_color="#fff", border_color="#3a3f4b", border_width=2, corner_radius=8)
+        self.search_entry.pack(pady=(12, 6), padx=10, fill="x")
+        self.search_entry.bind("<KeyRelease>", self.on_search)
+        # Sabit arama sonucu kutusu (her zaman görünür, başta boş)
+        self.search_results_box = tk.Listbox(self.search_frame, height=4, width=30, bg="#23272f", fg="#f5f5f5", selectbackground="#3a3f4b", font=("Segoe UI", 12), relief="flat", highlightthickness=1, borderwidth=1, highlightbackground="#3a3f4b")
+        self.search_results_box.pack(pady=(0, 10), padx=10, fill="x")
 
     # Event bağlantılarının yapılması
     def bind_events(self):
@@ -168,11 +177,11 @@ class App(ctk.CTk):
                 for idx, (x_norm, y_norm) in enumerate(self.current_points):
                     px = int(x_norm * label_w)
                     py = int(y_norm * label_h)
-                    draw.ellipse((px-7, py-7, px+7, py+7), fill=(255,255,255,255))
+                    draw.ellipse((px-7, py-7, px+7, py+7), fill=(0,0,255,255))
                     draw.text((px+10, py-10), f"{idx+1}:({px},{py})", fill=(255,255,255,255))
                 if len(self.current_points) > 1:
                     disp_points = [ (int(x*label_w), int(y*label_h)) for (x, y) in self.current_points ]
-                    draw.line(disp_points, fill=(255,255,255,255), width=2)
+                    draw.line(disp_points, fill=(255,0,0,255), width=2, joint="round")
             imgtk = None
             if self.detect_mode:
                 # Object detection sonuçlarını çiz
@@ -347,6 +356,23 @@ class App(ctk.CTk):
         interW = max(0, xB - xA)
         interH = max(0, yB - yA)
         return interW * interH
+
+    def on_search(self, event=None):
+        query = self.search_entry.get().strip().lower()
+        self.search_results_box.delete(0, tk.END)
+        if not query:
+            # Sonuç kutusu boş ama görünür kalacak
+            return
+        results = []
+        for i, area_box in enumerate(self.area_listboxes):
+            area_name = self.polygon_names[i] if i < len(self.polygon_names) else f"Alan{i+1}"
+            for person in area_box.listbox.get(0, tk.END):
+                if query in person.lower():
+                    results.append(f"{person} - {area_name}")
+        if results:
+            for res in results:
+                self.search_results_box.insert(tk.END, res)
+        # Sonuç yoksa kutu boş kalacak, ama kaybolmayacak
 
 if __name__ == "__main__":
     ctk.set_appearance_mode("dark")

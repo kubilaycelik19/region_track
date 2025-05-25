@@ -17,6 +17,8 @@ COCO_CLASSES = [
 
 # YOLOv8 modelini yükle (ör: 'yolov8n.pt' veya 'yolov8n-seg.pt')
 model = YOLO('yolov8n.pt')
+model.to('cuda')
+print('YOLO cihazı:', model.device)
 
 def detect_objects(frame):
     """
