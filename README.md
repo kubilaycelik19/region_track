@@ -38,20 +38,33 @@ faces/
 **Not**: 
 - Her kişi için birden fazla fotoğraf kullanmak tanıma başarısını artırır
 - Desteklenen formatlar: `.jpg`, `.jpeg`, `.png`
-- Fotoğraflarda yüzün net ve ön cepheden görülebilir olması önemlidir
+- Fotoğraflar net ve yüzün önden göründüğü şekilde olmalı
 
 ## Kullanım
 
-Uygulamayı başlatmak için:
-
+### Kamera ile başlatmak için:
 ```bash
-python main.py
+python main.py --source 0
 ```
 
-### Kontroller
+### Video dosyası ile başlatmak için:
+```bash
+python main.py --source test_video.mp4
+```
 
-- **Çıkış**: `q` tuşuna basın
-- **Kamera**: Varsayılan kamera (index 0) kullanılır
+### Arayüz Kullanımı
+
+- **Alan Ekle:**  
+  Sağ taraftan "Alan Ekle"ye bas,
+  Sol ekranda 4 nokta seç, sağdan isim gir (veya boş bırak), "Ekle"ye tıkla.
+- **Onayla:**  
+  Tüm alanları ekledikten sonra "Onayla"ya bas, tespit moduna geç.
+- **Kişi Sil:**  
+  Alan listesindeki kişiye sağ tıkla, "Kişi Sil" de.
+- **Alan Sil:**  
+  Alan başlığındaki kırmızı çarpı butonuna tıkla.
+- **Arama:**  
+  Sağ alttaki kutudan tüm alanlarda kişi ara.
 
 ## Teknik Detaylar
 
@@ -127,6 +140,16 @@ python -c "import cv2; print('Kamera durum:', cv2.VideoCapture(0).isOpened())"
 - İyi aydınlatma tracking kalitesini artırır
 - Hızlı hareketlerde ID'ler değişebilir
 
-## Lisans
+### Kütüphane ve requirements sorunları
+- dlib yükleme sorunu için çözüm videosu: https://www.youtube.com/watch?v=pO150OCX-ac&t=4s
+- face_recognition kütüphanesi sorunu içi python 3.9.21 kullanabilirsiniz.
+- "dlib-face-detection-error-unsupported-image-type-must-be-8bit-gray-or-rgb-image" sorunu için pip install numpy==1.26.4 kullanabilirsiniz
 
-Bu proje MIT lisansı altında lisanslanmıştır. 
+## Katkı ve Geliştirme
+
+Pull request ve issue'larınızı beklerim!  
+Her türlü öneri ve katkı için iletişime geçebilirsiniz.
+
+**Hazırlayan:**  
+Linkedin -> www.linkedin.com/in/kubilay-çelik-033b8b256
+github -> https://github.com/kubilaycelik19

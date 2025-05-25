@@ -7,6 +7,7 @@ import threading
 from face_recog import FaceRecognition
 from tkinter import messagebox
 from object_detect import detect_objects
+import time
 
 # Alan listesi için özel widget sınıfı
 class AreaListBox(ctk.CTkFrame):
@@ -52,7 +53,7 @@ class AreaListBox(ctk.CTkFrame):
 
 # Ana uygulama sınıfı
 class App(ctk.CTk):
-    def __init__(self):
+    def __init__(self, video_source=0):
         super().__init__()
         # Pencere ayarları (daha koyu ve modern)
         self.title("Akıllı Alan ve Yüz Takip Arayüzü (customtkinter)")
@@ -66,7 +67,9 @@ class App(ctk.CTk):
         self.init_ui()
         
         # Kamera ve değişkenlerin başlatılması
-        self.cap = cv2.VideoCapture(0)
+        if video_source is None:
+            video_source = 0
+        self.cap = cv2.VideoCapture(video_source)
         self.running = True
         self.polygon_mode = False
         self.current_points = []  # Normalized noktalar (0-1 arası oran)
@@ -79,6 +82,7 @@ class App(ctk.CTk):
         self.detect_mode = False
         self.last_area_for_person = {}
         self.fr = FaceRecognition()
+        self.last_seen_people = []  # Her alan için [{isim: zaman}]
         
         # Event ve UI güncellemelerinin başlatılması
         self.bind_events()
@@ -256,23 +260,35 @@ class App(ctk.CTk):
         return detected
 
     def update_area_people(self, detected_people):
+        now = time.time()
         # Eğer hiç alan yoksa, kişi listelerini temizle ve çık
         if not self.area_listboxes or not self.polygons:
             for area_box in self.area_listboxes:
                 area_box.clear_people()
             return
-        for area_box in self.area_listboxes:
+        # Her alan için: son görülenleri güncelle
+        for i, area_box in enumerate(self.area_listboxes):
+            # Alan için yeni tespit edilen isimler
+            current_names = set()
+            for name, (x, y) in detected_people:
+                if i < len(self.polygons):
+                    label_w = self.image_label.winfo_width()
+                    label_h = self.image_label.winfo_height()
+                    disp_poly = [ (int(px*label_w), int(py*label_h)) for (px, py) in self.polygons[i] ]
+                    if self.point_in_polygon((x, y), disp_poly):
+                        current_names.add(name)
+            # Son görülenleri güncelle
+            last_seen = self.last_seen_people[i]
+            for name in current_names:
+                last_seen[name] = now
+            # 1 saniyeden eski olanları sil
+            to_remove = [n for n, t in last_seen.items() if now - t > 3.0]
+            for n in to_remove:
+                del last_seen[n]
+            # Alan kutusunu güncelle
             area_box.clear_people()
-        label_w = self.image_label.winfo_width()
-        label_h = self.image_label.winfo_height()
-        for name, (x, y) in detected_people:
-            for i, poly in enumerate(self.polygons):
-                # Polygonu ekrana göre dönüştür
-                disp_poly = [ (int(px*label_w), int(py*label_h)) for (px, py) in poly ]
-                if self.point_in_polygon((x, y), disp_poly):
-                    self.area_listboxes[i].add_person(name)
-                    self.last_area_for_person[name] = i
-                    break
+            for n in last_seen:
+                area_box.add_person(n)
 
     def point_in_polygon(self, point, poly):
         n = len(poly)
@@ -310,7 +326,9 @@ class App(ctk.CTk):
 
     def add_area(self):
         name = self.name_input.get().strip()
-        if len(self.current_points) == 4 and name:
+        if len(self.current_points) == 4:
+            if not name:
+                name = f"Alan{len(self.polygon_names)+1}"
             self.polygons.append(self.current_points.copy())
             self.polygon_names.append(name)
             self.current_points = []
@@ -320,6 +338,7 @@ class App(ctk.CTk):
             area_box = AreaListBox(self.area_lists_frame, name, self.remove_area)
             area_box.pack(fill="x", pady=6, anchor="n")
             self.area_listboxes.append(area_box)
+            self.last_seen_people.append({})  # Yeni alan için sözlük ekle
             self.polygon_mode = False
             print(f"Alan eklendi: {name}")
         else:
@@ -331,6 +350,7 @@ class App(ctk.CTk):
         del self.area_listboxes[idx]
         del self.polygons[idx]
         del self.polygon_names[idx]
+        del self.last_seen_people[idx]
         print("Alan silindi.")
 
     def finish_areas(self):
