@@ -13,20 +13,19 @@ class AreaListBox(ctk.CTkFrame):
     def __init__(self, master, area_name, remove_callback, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
         self.remove_callback = remove_callback
-        # Alan başlığı için frame
-        self.label_frame = ctk.CTkFrame(self)
+        # Alan başlığı için frame (renkli ve köşeleri yuvarlatılmış)
+        self.label_frame = ctk.CTkFrame(self, fg_color="#3a3f4b", corner_radius=10)
         self.label_frame.pack(fill="x", padx=0, pady=0)
-        # Alan ismi etiketi
-        self.label = ctk.CTkLabel(self.label_frame, text=area_name, font=("Arial", 14, "bold"))
-        self.label.pack(side="left", anchor="w", padx=5, pady=(5, 0))
-        # Alan silme butonu
-        self.remove_btn = ctk.CTkButton(self.label_frame, text="Sil", width=40, fg_color="#c00", hover_color="#a00", command=self.remove_area)
-        self.remove_btn.pack(side="right", padx=5, pady=2)
-        
-        # Kişi listesi
-        self.listbox = tk.Listbox(self, height=4, width=25, bg="white", fg="black", selectbackground="#e0e0e0") # Listbox widget'ı oluşturuluyor
-        self.listbox.pack(fill="x", padx=5, pady=(0, 10)) # Listbox widget'ı paketleniyor
-        self.listbox.bind("<Button-3>", self.on_right_click) # Listbox widget'ına sağ tıklama olayı bağlanıyor
+        # Alan ismi etiketi (büyük ve modern font)
+        self.label = ctk.CTkLabel(self.label_frame, text=area_name, font=("Segoe UI", 15, "bold"), text_color="#f5f5f5")
+        self.label.pack(side="left", anchor="w", padx=10, pady=(8, 0))
+        # Alan silme butonu (ikon ve renkli)
+        self.remove_btn = ctk.CTkButton(self.label_frame, text="✖", width=32, fg_color="#e74c3c", hover_color="#c0392b", text_color="#fff", font=("Segoe UI", 14, "bold"), corner_radius=8, command=self.remove_area)
+        self.remove_btn.pack(side="right", padx=8, pady=4)
+        # Kişi listesi (daha modern kutu)
+        self.listbox = tk.Listbox(self, height=4, width=25, bg="#23272f", fg="#f5f5f5", selectbackground="#3a3f4b", font=("Segoe UI", 12), relief="flat", highlightthickness=0, borderwidth=0)
+        self.listbox.pack(fill="x", padx=10, pady=(0, 12))
+        self.listbox.bind("<Button-3>", self.on_right_click)
 
     # Kişi ekleme metodu
     def add_person(self, name):
@@ -55,10 +54,11 @@ class AreaListBox(ctk.CTkFrame):
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        # Pencere ayarları
+        # Pencere ayarları (daha koyu ve modern)
         self.title("Akıllı Alan ve Yüz Takip Arayüzü (customtkinter)")
         self.geometry("1200x700")
         self.resizable(True, True)
+        self.configure(bg="#23272f")
         self.frame_width = 800
         self.frame_height = 600
         
@@ -89,36 +89,32 @@ class App(ctk.CTk):
     # UI bileşenlerinin oluşturulması
     def init_ui(self):
         # Ana frame
-        self.main_frame = ctk.CTkFrame(self)
+        self.main_frame = ctk.CTkFrame(self, fg_color="#23272f")
         self.main_frame.pack(fill="both", expand=True)
-
         # Sol frame (kamera görüntüsü için)
-        self.left_frame = ctk.CTkFrame(self.main_frame, width=self.frame_width, height=self.frame_height)
-        self.left_frame.pack(side="left", padx=10, pady=10)
+        self.left_frame = ctk.CTkFrame(self.main_frame, width=self.frame_width, height=self.frame_height, fg_color="#181a20", corner_radius=16)
+        self.left_frame.pack(side="left", padx=18, pady=18)
         self.left_frame.pack_propagate(False)
-        self.image_label = tk.Label(self.left_frame, bg="#222", width=self.frame_width, height=self.frame_height)
+        self.image_label = tk.Label(self.left_frame, bg="#181a20", width=self.frame_width, height=self.frame_height)
         self.image_label.pack(fill="both", expand=True)
-
         # Sağ frame (kontrol paneli)
-        self.right_frame = ctk.CTkFrame(self.main_frame, width=400)
-        self.right_frame.pack(side="right", fill="y", padx=10, pady=10)
+        self.right_frame = ctk.CTkFrame(self.main_frame, width=400, fg_color="#23272f")
+        self.right_frame.pack(side="right", fill="y", padx=18, pady=18)
         self.right_frame.pack_propagate(False)
-
-        # Kontrol butonları
-        self.add_area_btn = ctk.CTkButton(self.right_frame, text="Alan Ekle", command=self.start_polygon_mode)
-        self.add_area_btn.pack(pady=(20, 10), fill="x")
-        self.name_input = ctk.CTkEntry(self.right_frame, placeholder_text="Alan ismi girin")
-        self.name_input.pack(pady=10, fill="x")
-        self.confirm_area_btn = ctk.CTkButton(self.right_frame, text="Ekle", command=self.add_area)
-        self.confirm_area_btn.pack(pady=10, fill="x")
-        self.finish_btn = ctk.CTkButton(self.right_frame, text="Onayla", command=self.finish_areas)
-        self.finish_btn.pack(pady=10, fill="x")
-
-        # Alan listeleri bölümü
-        self.area_lists_label = ctk.CTkLabel(self.right_frame, text="Alanlardaki Kişiler", font=("Arial", 16, "bold"))
-        self.area_lists_label.pack(pady=(30, 5))
-        self.area_lists_frame = ctk.CTkFrame(self.right_frame)
-        self.area_lists_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        # Kontrol butonları (modern renkler ve fontlar)
+        self.add_area_btn = ctk.CTkButton(self.right_frame, text="Alan Ekle", font=("Segoe UI", 14, "bold"), fg_color="#3498db", hover_color="#2980b9", text_color="#fff", corner_radius=10, height=40, command=self.start_polygon_mode)
+        self.add_area_btn.pack(pady=(24, 12), fill="x")
+        self.name_input = ctk.CTkEntry(self.right_frame, placeholder_text="Alan ismi girin", font=("Segoe UI", 13), fg_color="#23272f", text_color="#fff", border_color="#3a3f4b", border_width=2, corner_radius=8)
+        self.name_input.pack(pady=12, fill="x")
+        self.confirm_area_btn = ctk.CTkButton(self.right_frame, text="Ekle", font=("Segoe UI", 14, "bold"), fg_color="#27ae60", hover_color="#219150", text_color="#fff", corner_radius=10, height=40, command=self.add_area)
+        self.confirm_area_btn.pack(pady=12, fill="x")
+        self.finish_btn = ctk.CTkButton(self.right_frame, text="Onayla", font=("Segoe UI", 14, "bold"), fg_color="#8e44ad", hover_color="#6c3483", text_color="#fff", corner_radius=10, height=40, command=self.finish_areas)
+        self.finish_btn.pack(pady=12, fill="x")
+        # Alan listeleri bölümü (büyük başlık)
+        self.area_lists_label = ctk.CTkLabel(self.right_frame, text="Alanlardaki Kişiler", font=("Segoe UI", 18, "bold"), text_color="#f5f5f5")
+        self.area_lists_label.pack(pady=(36, 8))
+        self.area_lists_frame = ctk.CTkFrame(self.right_frame, fg_color="#181a20", corner_radius=14)
+        self.area_lists_frame.pack(fill="both", expand=True, padx=8, pady=8)
         self.area_listboxes = []
 
     # Event bağlantılarının yapılması

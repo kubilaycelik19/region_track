@@ -1,8 +1,8 @@
-import face_recognition  # Yüz tanıma işlemleri için kullanılan kütüphane
-import os, sys           # Dosya ve sistem işlemleri için
-import cv2               # OpenCV, görüntü işleme için
-import numpy as np       # Sayısal işlemler için
-import math              # Matematiksel işlemler için
+import face_recognition  
+import os, sys           
+import cv2               
+import numpy as np       
+import math              
 
 def face_confidence(face_distance, face_match_threshold=0.6):
     """Yüz mesafesini güven skoruna çeviriyorum."""

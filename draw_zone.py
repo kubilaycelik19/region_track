@@ -48,10 +48,10 @@ def draw_polygons_on_frame(frame, polygons, labels=None, active_points=None, fil
     # Aktif işaretlenen noktaları göster
     if active_points is not None and len(active_points) > 0:
         for idx, pt in enumerate(active_points):
-            cv2.circle(frame, pt, 6, (255,255,255), -1)
-            cv2.putText(frame, f"{idx+1}:({pt[0]},{pt[1]})", (pt[0]+8, pt[1]-8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+            cv2.circle(frame, pt, 6, (255, 0, 0), -1)
+            cv2.putText(frame, f"{idx+1}:({pt[0]},{pt[1]})", (pt[0]+8, pt[1]-8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1)
         if len(active_points) > 1:
-            cv2.polylines(frame, [np.array(active_points, np.int32).reshape((-1, 1, 2))], False, (255,255,255), 2)
+            cv2.polylines(frame, [np.array(active_points, np.int32).reshape((-1, 1, 2))], False, (255, 0, 0), 2)
     return cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
 
 def draw_zones_on_stream(cap):
