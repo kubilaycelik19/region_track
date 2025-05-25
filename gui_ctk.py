@@ -149,28 +149,61 @@ class App(ctk.CTk):
             if self.detect_mode:
                 # Object detection sonuçlarını çiz
                 objects = detect_objects(frame)
+                person_boxes_in_area = []
                 for class_id, class_name, score, (x1, y1, x2, y2), track_id in objects:
-                    # Koordinatları QLabel boyutuna orantıla
-                    x1 = int(x1 * label_w / frame.shape[1])
-                    x2 = int(x2 * label_w / frame.shape[1])
-                    y1 = int(y1 * label_h / frame.shape[0])
-                    y2 = int(y2 * label_h / frame.shape[0])
+                    x1_disp = int(x1 * label_w / frame.shape[1])
+                    x2_disp = int(x2 * label_w / frame.shape[1])
+                    y1_disp = int(y1 * label_h / frame.shape[0])
+                    y2_disp = int(y2 * label_h / frame.shape[0])
+                    show_object = False
+                    for poly in self.polygons:
+                        disp_poly = [ (int(x*label_w), int(y*label_h)) for (x, y) in poly ]
+                        poly_xs = [p[0] for p in disp_poly]
+                        poly_ys = [p[1] for p in disp_poly]
+                        poly_bbox = (min(poly_xs), min(poly_ys), max(poly_xs), max(poly_ys))
+                        inter_area = self.intersection_area((x1_disp, y1_disp, x2_disp, y2_disp), poly_bbox)
+                        box_area = max(1, (x2_disp - x1_disp) * (y2_disp - y1_disp))
+                        if box_area > 0 and inter_area / box_area >= 0.7:
+                            show_object = True
+                            break
+                    if not show_object:
+                        continue
                     color = (0,255,0,180) if class_name == 'person' else (255,128,0,180)
-                    draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
+                    draw.rectangle([x1_disp, y1_disp, x2_disp, y2_disp], outline=color, width=3)
                     label = f"{class_name} {score*100:.1f}%"
                     if track_id is not None:
                         label += f" ID:{track_id}"
-                    draw.text((x1+2, y1+2), label, fill=(255,255,255,255))
-                # Yüz tanıma sonuçlarını çiz
-                detected_people = self.detect_faces(frame)
-                for name, (cx, cy), (top, right, bottom, left) in detected_people:
-                    x1 = int(left * label_w / frame.shape[1])
-                    x2 = int(right * label_w / frame.shape[1])
-                    y1 = int(top * label_h / frame.shape[0])
-                    y2 = int(bottom * label_h / frame.shape[0])
-                    draw.rectangle([x1, y1, x2, y2], outline=(0,255,255,180), width=2)
-                    draw.text((x1+2, y1-18), name, fill=(255,255,0,255))
-                self.update_area_people([(name, (cx, cy)) for name, (cx, cy), _ in detected_people])
+                    draw.text((x1_disp+2, y1_disp+2), label, fill=(255,255,255,255))
+                    # Sadece person kutuları için, kutunun merkezi bir polygonun içindeyse yüz tanıma yapılacak
+                    if class_name == 'person':
+                        cx = (x1_disp + x2_disp) // 2
+                        cy = (y1_disp + y2_disp) // 2
+                        for poly in self.polygons:
+                            if self.point_in_polygon((cx, cy), [(int(x*label_w), int(y*label_h)) for (x, y) in poly]):
+                                person_boxes_in_area.append((x1_disp, y1_disp, x2_disp, y2_disp))
+                                break
+                # Sadece alan içindeki person kutuları için yüz tanıma yap
+                detected_people = []
+                for (x1, y1, x2, y2) in person_boxes_in_area:
+                    # Sadece kutunun içindeki bölgeyi kırp
+                    face_crop = frame[y1:y2, x1:x2]
+                    # Yüz tanıma fonksiyonunu kırpılmış bölgede uygula
+                    faces = self.fr.recognize_faces(face_crop)
+                    for name, _, (top, right, bottom, left) in faces:
+                        # Kırpılmış kutudan orijinal frame'e koordinatları çevir
+                        abs_top = y1 + top
+                        abs_right = x1 + right
+                        abs_bottom = y1 + bottom
+                        abs_left = x1 + left
+                        cx = (abs_left + abs_right) // 2
+                        cy = (abs_top + abs_bottom) // 2
+                        detected_people.append((name, (cx, cy), (abs_top, abs_right, abs_bottom, abs_left)))
+                        # Kutu ve isim çiz
+                        draw.rectangle([abs_left, abs_top, abs_right, abs_bottom], outline=(0,255,255,180), width=2)
+                        draw.text((abs_left+2, abs_top-18), name, fill=(255,255,0,255))
+                # Sadece tanınan kişiler alan listesine eklensin
+                detected_people_for_area = [(name, (cx, cy)) for name, (cx, cy), _ in detected_people if name != "Unknown"]
+                self.update_area_people(detected_people_for_area)
             imgtk = ImageTk.PhotoImage(image=img)
             self.image_label.imgtk = imgtk
             self.image_label.configure(image=imgtk)
@@ -272,6 +305,16 @@ class App(ctk.CTk):
         if self.cap:
             self.cap.release()
         self.destroy()
+
+    def intersection_area(self, boxA, boxB):
+        # boxA ve boxB: (x1, y1, x2, y2)
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[2], boxB[2])
+        yB = min(boxA[3], boxB[3])
+        interW = max(0, xB - xA)
+        interH = max(0, yB - yA)
+        return interW * interH
 
 if __name__ == "__main__":
     ctk.set_appearance_mode("dark")
