@@ -1,0 +1,280 @@
+import customtkinter as ctk
+import tkinter as tk
+from PIL import Image, ImageTk, ImageDraw
+import cv2
+import threading
+from face_recog import FaceRecognition
+from tkinter import messagebox
+from object_detect import detect_objects
+
+class AreaListBox(ctk.CTkFrame):
+    def __init__(self, master, area_name, remove_callback, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        self.remove_callback = remove_callback
+        self.label_frame = ctk.CTkFrame(self)
+        self.label_frame.pack(fill="x", padx=0, pady=0)
+        self.label = ctk.CTkLabel(self.label_frame, text=area_name, font=("Arial", 14, "bold"))
+        self.label.pack(side="left", anchor="w", padx=5, pady=(5, 0))
+        self.remove_btn = ctk.CTkButton(self.label_frame, text="Sil", width=40, fg_color="#c00", hover_color="#a00", command=self.remove_area)
+        self.remove_btn.pack(side="right", padx=5, pady=2)
+        self.listbox = tk.Listbox(self, height=4, width=25, bg="#222", fg="#fff", selectbackground="#444")
+        self.listbox.pack(fill="x", padx=5, pady=(0, 10))
+        self.listbox.bind("<Button-3>", self.on_right_click)
+
+    def add_person(self, name):
+        if name not in self.listbox.get(0, tk.END):
+            self.listbox.insert(tk.END, name)
+
+    def clear_people(self):
+        self.listbox.delete(0, tk.END)
+
+    def remove_area(self):
+        if messagebox.askyesno("Alan Sil", "Bu alanı silmek istediğinize emin misiniz?"):
+            self.remove_callback(self)
+
+    def on_right_click(self, event):
+        selection = self.listbox.curselection()
+        if selection:
+            idx = selection[0]
+            name = self.listbox.get(idx)
+            if messagebox.askyesno("Kişi Sil", f"{name} kişisini bu alandan silmek istiyor musunuz?"):
+                self.listbox.delete(idx)
+
+class App(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        self.title("Akıllı Alan ve Yüz Takip Arayüzü (customtkinter)")
+        self.geometry("1200x700")
+        self.resizable(True, True)
+        self.frame_width = 800
+        self.frame_height = 600
+        self.init_ui()
+        self.cap = cv2.VideoCapture(0)
+        self.running = True
+        self.polygon_mode = False
+        self.current_points = []  # Normalized noktalar (0-1 arası oran)
+        self.polygons = []        # Her polygon: [ (x_norm, y_norm), ... ]
+        self.polygon_names = []
+        self.polygon_colors = [(0,255,255,100), (255,0,0,100), (0,255,0,100), (255,0,255,100), (255,255,0,100)]
+        self.polygon_border_colors = [(0,200,200), (200,0,0), (0,200,0), (200,0,200), (200,200,0)]
+        self.area_listboxes = []
+        self.detect_mode = False
+        self.last_area_for_person = {}
+        self.fr = FaceRecognition()
+        self.bind_events()
+        self.name_input.configure(state="disabled")
+        self.confirm_area_btn.configure(state="disabled")
+        self.update_frame()
+
+    def init_ui(self):
+        self.main_frame = ctk.CTkFrame(self)
+        self.main_frame.pack(fill="both", expand=True)
+
+        self.left_frame = ctk.CTkFrame(self.main_frame, width=self.frame_width, height=self.frame_height)
+        self.left_frame.pack(side="left", padx=10, pady=10)
+        self.left_frame.pack_propagate(False)
+        self.image_label = tk.Label(self.left_frame, bg="#222", width=self.frame_width, height=self.frame_height)
+        self.image_label.pack(fill="both", expand=True)
+
+        self.right_frame = ctk.CTkFrame(self.main_frame, width=400)
+        self.right_frame.pack(side="right", fill="y", padx=10, pady=10)
+        self.right_frame.pack_propagate(False)
+
+        self.add_area_btn = ctk.CTkButton(self.right_frame, text="Alan Ekle", command=self.start_polygon_mode)
+        self.add_area_btn.pack(pady=(20, 10), fill="x")
+        self.name_input = ctk.CTkEntry(self.right_frame, placeholder_text="Alan ismi girin")
+        self.name_input.pack(pady=10, fill="x")
+        self.confirm_area_btn = ctk.CTkButton(self.right_frame, text="Ekle", command=self.add_area)
+        self.confirm_area_btn.pack(pady=10, fill="x")
+        self.finish_btn = ctk.CTkButton(self.right_frame, text="Onayla", command=self.finish_areas)
+        self.finish_btn.pack(pady=10, fill="x")
+
+        self.area_lists_label = ctk.CTkLabel(self.right_frame, text="Alanlardaki Kişiler", font=("Arial", 16, "bold"))
+        self.area_lists_label.pack(pady=(30, 5))
+        self.area_lists_frame = ctk.CTkFrame(self.right_frame)
+        self.area_lists_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        self.area_listboxes = []
+
+    def bind_events(self):
+        self.image_label.bind("<Button-1>", self.on_image_click)
+
+    def update_frame(self):
+        if not self.running:
+            return
+        ret, frame = self.cap.read()
+        if ret:
+            frame = cv2.flip(frame, 1)
+            label_w = self.image_label.winfo_width()
+            label_h = self.image_label.winfo_height()
+            frame = cv2.resize(frame, (label_w, label_h))
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(rgb)
+            draw = ImageDraw.Draw(img, 'RGBA')
+            # Kalıcı polygonları göster
+            for i, poly in enumerate(self.polygons):
+                color = self.polygon_colors[i % len(self.polygon_colors)]
+                border = self.polygon_border_colors[i % len(self.polygon_border_colors)]
+                if len(poly) == 4:
+                    disp_poly = [ (int(x*label_w), int(y*label_h)) for (x, y) in poly ]
+                    draw.polygon(disp_poly, fill=color)
+                    draw.line(disp_poly + [disp_poly[0]], fill=border, width=3)
+                    if i < len(self.polygon_names):
+                        cx = int(sum([p[0] for p in disp_poly]) / 4)
+                        cy = int(sum([p[1] for p in disp_poly]) / 4)
+                        draw.text((cx-30, cy), self.polygon_names[i], fill=(255,255,255,255))
+            # Geçici polygon (4 nokta seçildiyse ve isim girilmediyse)
+            if len(self.current_points) == 4 and self.name_input.cget('state') == 'normal':
+                disp_poly = [ (int(x*label_w), int(y*label_h)) for (x, y) in self.current_points ]
+                # Yarı şeffaf mavi dolgu ve kesikli çizgi
+                draw.polygon(disp_poly, fill=(0,128,255,80))
+                for i in range(4):
+                    p1 = disp_poly[i]
+                    p2 = disp_poly[(i+1)%4]
+                    # Kesikli çizgi için noktalar
+                    for t in range(0, 100, 10):
+                        x = int(p1[0] + (p2[0]-p1[0])*t/100)
+                        y = int(p1[1] + (p2[1]-p1[1])*t/100)
+                        draw.ellipse((x-2, y-2, x+2, y+2), fill=(0,128,255,255))
+            # Geçici çizim (henüz tamamlanmamış polygon)
+            elif self.polygon_mode and len(self.current_points) > 0:
+                for idx, (x_norm, y_norm) in enumerate(self.current_points):
+                    px = int(x_norm * label_w)
+                    py = int(y_norm * label_h)
+                    draw.ellipse((px-7, py-7, px+7, py+7), fill=(255,255,255,255))
+                    draw.text((px+10, py-10), f"{idx+1}:({px},{py})", fill=(255,255,255,255))
+                if len(self.current_points) > 1:
+                    disp_points = [ (int(x*label_w), int(y*label_h)) for (x, y) in self.current_points ]
+                    draw.line(disp_points, fill=(255,255,255,255), width=2)
+            imgtk = None
+            if self.detect_mode:
+                # Object detection sonuçlarını çiz
+                objects = detect_objects(frame)
+                for class_id, class_name, score, (x1, y1, x2, y2), track_id in objects:
+                    # Koordinatları QLabel boyutuna orantıla
+                    x1 = int(x1 * label_w / frame.shape[1])
+                    x2 = int(x2 * label_w / frame.shape[1])
+                    y1 = int(y1 * label_h / frame.shape[0])
+                    y2 = int(y2 * label_h / frame.shape[0])
+                    color = (0,255,0,180) if class_name == 'person' else (255,128,0,180)
+                    draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
+                    label = f"{class_name} {score*100:.1f}%"
+                    if track_id is not None:
+                        label += f" ID:{track_id}"
+                    draw.text((x1+2, y1+2), label, fill=(255,255,255,255))
+                # Yüz tanıma sonuçlarını çiz
+                detected_people = self.detect_faces(frame)
+                for name, (cx, cy), (top, right, bottom, left) in detected_people:
+                    x1 = int(left * label_w / frame.shape[1])
+                    x2 = int(right * label_w / frame.shape[1])
+                    y1 = int(top * label_h / frame.shape[0])
+                    y2 = int(bottom * label_h / frame.shape[0])
+                    draw.rectangle([x1, y1, x2, y2], outline=(0,255,255,180), width=2)
+                    draw.text((x1+2, y1-18), name, fill=(255,255,0,255))
+                self.update_area_people([(name, (cx, cy)) for name, (cx, cy), _ in detected_people])
+            imgtk = ImageTk.PhotoImage(image=img)
+            self.image_label.imgtk = imgtk
+            self.image_label.configure(image=imgtk)
+        self.after(30, self.update_frame)
+
+    def detect_faces(self, frame):
+        results = self.fr.recognize_faces(frame)
+        detected = []
+        for name, _, (top, right, bottom, left) in results:
+            cx = (left + right) // 2
+            cy = (top + bottom) // 2
+            detected.append((name, (cx, cy), (top, right, bottom, left)))
+        return detected
+
+    def update_area_people(self, detected_people):
+        # Eğer hiç alan yoksa, kişi listelerini temizle ve çık
+        if not self.area_listboxes or not self.polygons:
+            for area_box in self.area_listboxes:
+                area_box.clear_people()
+            return
+        for area_box in self.area_listboxes:
+            area_box.clear_people()
+        for name, (x, y) in detected_people:
+            for i, poly in enumerate(self.polygons):
+                if self.point_in_polygon((x, y), poly):
+                    self.area_listboxes[i].add_person(name)
+                    self.last_area_for_person[name] = i
+                    break
+
+    def point_in_polygon(self, point, poly):
+        n = len(poly)
+        inside = False
+        px, py = point
+        j = n - 1
+        for i in range(n):
+            xi, yi = poly[i]
+            xj, yj = poly[j]
+            if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi + 1e-9) + xi):
+                inside = not inside
+            j = i
+        return inside
+
+    def on_image_click(self, event):
+        if not self.polygon_mode:
+            return
+        label_w = self.image_label.winfo_width()
+        label_h = self.image_label.winfo_height()
+        x_norm = event.x / label_w
+        y_norm = event.y / label_h
+        self.current_points.append((x_norm, y_norm))
+        if len(self.current_points) == 4:
+            self.name_input.configure(state="normal")
+            self.confirm_area_btn.configure(state="normal")
+            self.polygon_mode = False
+
+    def start_polygon_mode(self):
+        self.polygon_mode = True
+        self.current_points = []
+        self.name_input.delete(0, "end")
+        self.name_input.configure(state="disabled")
+        self.confirm_area_btn.configure(state="disabled")
+        print("Polygon çizim modu başlatıldı.")
+
+    def add_area(self):
+        name = self.name_input.get().strip()
+        if len(self.current_points) == 4 and name:
+            self.polygons.append(self.current_points.copy())
+            self.polygon_names.append(name)
+            self.current_points = []
+            self.name_input.delete(0, "end")
+            self.name_input.configure(state="disabled")
+            self.confirm_area_btn.configure(state="disabled")
+            area_box = AreaListBox(self.area_lists_frame, name, self.remove_area)
+            area_box.pack(fill="x", pady=6, anchor="n")
+            self.area_listboxes.append(area_box)
+            self.polygon_mode = False
+            print(f"Alan eklendi: {name}")
+        else:
+            print("4 nokta ve isim gerekli!")
+
+    def remove_area(self, area_box):
+        idx = self.area_listboxes.index(area_box)
+        area_box.destroy()
+        del self.area_listboxes[idx]
+        del self.polygons[idx]
+        del self.polygon_names[idx]
+        print("Alan silindi.")
+
+    def finish_areas(self):
+        print("Alan ekleme tamamlandı, tespit moduna geçildi.")
+        self.detect_mode = True
+        self.add_area_btn.configure(state="disabled")
+        self.name_input.configure(state="disabled")
+        self.confirm_area_btn.configure(state="disabled")
+        self.finish_btn.configure(state="disabled")
+
+    def on_closing(self):
+        self.running = False
+        if self.cap:
+            self.cap.release()
+        self.destroy()
+
+if __name__ == "__main__":
+    ctk.set_appearance_mode("dark")
+    app = App()
+    app.protocol("WM_DELETE_WINDOW", app.on_closing)
+    app.mainloop() 

@@ -13,12 +13,17 @@ BORDER_COLORS = [(0,200,200), (0,0,200), (200,0,0), (0,200,0), (200,0,200), (200
 
 # Fare olaylarını işleyecek fonksiyon (4 köşe polygon)
 def mouse_callback(event, x, y, flags, param):
-    global polygon_points, polygons, polygon_labels
+    global polygon_points, polygons, polygon_labels, current_frame
     if event == cv2.EVENT_LBUTTONDOWN:
         polygon_points.append((x, y))
         if len(polygon_points) == 4:
             polygons.append(polygon_points.copy())
-            # Kullanıcıdan label al
+            # Önce polygonu ekranda göster
+            temp_frame = current_frame.copy()
+            temp_frame = draw_polygons_on_frame(temp_frame, polygons, labels=polygon_labels + ["?"], active_points=[])
+            cv2.imshow('Canli Akis', temp_frame)
+            cv2.waitKey(1)  # Ekranı güncelle
+            # Sonra input al
             label = input(f"{len(polygons)}. alan için etiket girin: ")
             polygon_labels.append(label)
             polygon_points = []
@@ -42,8 +47,9 @@ def draw_polygons_on_frame(frame, polygons, labels=None, active_points=None, fil
                 cv2.putText(frame, str(labels[i]), (pts[0][0], pts[0][1]), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255,255,255), 3)
     # Aktif işaretlenen noktaları göster
     if active_points is not None and len(active_points) > 0:
-        for pt in active_points:
+        for idx, pt in enumerate(active_points):
             cv2.circle(frame, pt, 6, (255,255,255), -1)
+            cv2.putText(frame, f"{idx+1}:({pt[0]},{pt[1]})", (pt[0]+8, pt[1]-8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
         if len(active_points) > 1:
             cv2.polylines(frame, [np.array(active_points, np.int32).reshape((-1, 1, 2))], False, (255,255,255), 2)
     return cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
