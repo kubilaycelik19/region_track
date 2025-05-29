@@ -2,6 +2,7 @@
 import customtkinter as ctk
 import tkinter as tk
 from PIL import Image, ImageTk, ImageDraw
+from PIL import ImageFilter
 import cv2
 import threading
 from face_recog import FaceRecognition
@@ -55,7 +56,7 @@ class AreaListBox(ctk.CTkFrame):
 
 # Ana uygulama sınıfı
 class App(ctk.CTk):
-    def __init__(self, video_source=0):
+    def __init__(self):
         super().__init__()
         # Pencere ayarları (daha koyu ve modern)
         self.title("Akıllı Alan ve Yüz Takip Arayüzü (customtkinter)")
@@ -69,9 +70,7 @@ class App(ctk.CTk):
         self.init_ui()
         
         # Kamera ve değişkenlerin başlatılması
-        if video_source is None:
-            video_source = 0
-        self.cap = cv2.VideoCapture(video_source)
+        self.cap = cv2.VideoCapture(0)
         self.running = True
         self.polygon_mode = False
         self.current_points = []  # Normalized noktalar (0-1 arası oran)
