@@ -141,13 +141,8 @@ class App(ctk.CTk):
     def update_frame(self):
         if not self.running:
             return
-        ret, frame = self.cap.read()
-        if ret:
-            # Görüntü işleme
-            frame = cv2.flip(frame, 1)
-            label_w = self.image_label.winfo_width()
-            label_h = self.image_label.winfo_height()
-            frame = cv2.resize(frame, (label_w, label_h))
+        frame, (label_w, label_h) = self.get_frame_and_resize()
+        if frame is not None:
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             img = Image.fromarray(rgb)
             draw = ImageDraw.Draw(img, 'RGBA')
@@ -199,12 +194,10 @@ class App(ctk.CTk):
                     x2_disp = int(x2 * label_w / frame.shape[1])
                     y1_disp = int(y1 * label_h / frame.shape[0])
                     y2_disp = int(y2 * label_h / frame.shape[0])
-                    box_area = max(1, (x2_disp - x1_disp) * (y2_disp - y1_disp))
                     in_any_poly = False
                     for poly_idx, poly in enumerate(self.polygons):
                         disp_poly = [ (int(x*label_w), int(y*label_h)) for (x, y) in poly ]
-                        inter_area = self.bbox_polygon_intersection_area((x1_disp, y1_disp, x2_disp, y2_disp), disp_poly)
-                        if box_area > 0 and inter_area / box_area >= 0.7:
+                        if self.is_bbox_in_polygon((x1_disp, y1_disp, x2_disp, y2_disp), disp_poly):
                             in_any_poly = True
                             # Sadece person için, ID'yi ilgili alana ekle
                             if class_name == 'person' and track_id is not None:
@@ -214,38 +207,40 @@ class App(ctk.CTk):
                         continue  # Alan dışında, hiçbir şey çizme
                     color = (0,255,0,180) if class_name == 'person' else (255,128,0,180)
                     draw.rectangle([x1_disp, y1_disp, x2_disp, y2_disp], outline=color, width=3)
-                    label = f"{class_name} {score*100:.1f}%"
+                    label = f"{class_name} {int(score*100)}%"
                     if track_id is not None:
                         label += f" ID:{track_id}"
                     draw.text((x1_disp+2, y1_disp+2), label, fill=(255,255,255,255))
                 # Her person kutusu için yüz tanıma yap (sadece alan içindekiler için)
+                FACE_SCORE_THRESHOLD = 0.75 
                 for class_id, class_name, score, (x1, y1, x2, y2), track_id in objects:
                     if class_name == 'person' and track_id is not None:
                         x1_disp = int(x1 * label_w / frame.shape[1])
                         x2_disp = int(x2 * label_w / frame.shape[1])
                         y1_disp = int(y1 * label_h / frame.shape[0])
                         y2_disp = int(y2 * label_h / frame.shape[0])
-                        box_area = max(1, (x2_disp - x1_disp) * (y2_disp - y1_disp))
                         in_any_poly = False
                         for poly_idx, poly in enumerate(self.polygons):
                             disp_poly = [ (int(x*label_w), int(y*label_h)) for (x, y) in poly ]
-                            inter_area = self.bbox_polygon_intersection_area((x1_disp, y1_disp, x2_disp, y2_disp), disp_poly)
-                            if box_area > 0 and inter_area / box_area >= 0.7:
+                            if self.is_bbox_in_polygon((x1_disp, y1_disp, x2_disp, y2_disp), disp_poly):
                                 in_any_poly = True
                                 break
                         if not in_any_poly:
                             continue  # Alan dışında, yüz tanıma yapma
                         face_crop = frame[y1_disp:y2_disp, x1_disp:x2_disp]
                         faces = self.fr.recognize_faces(face_crop)
-                        for name, _, (top, right, bottom, left) in faces:
-                            if name != "Unknown":
-                                self.id_to_name[track_id] = name  # ID'ye isim ata
+                        for name, face_score, (top, right, bottom, left) in faces:
+                            # Yüzde işareti varsa temizle, float'a çevir, normalize et
+                            score_val = float(face_score.replace('%', '').strip())
+                            score_val = score_val / 100
+                            if name != "Unknown" and score_val >= FACE_SCORE_THRESHOLD:
+                                self.id_to_name[track_id] = name
                             abs_top = y1_disp + top
                             abs_right = x1_disp + right
                             abs_bottom = y1_disp + bottom
                             abs_left = x1_disp + left
                             draw.rectangle([abs_left, abs_top, abs_right, abs_bottom], outline=(0,255,255,180), width=2)
-                            draw.text((abs_left+2, abs_top-18), name, fill=(255,255,0,255))
+                            draw.text((abs_left+2, abs_top-18), f"{name} ({int(score_val*100)})", fill=(255,255,0,255))
                 # Alanlardaki kişi listelerini güncelle
                 self.update_area_people_v2(person_ids_in_area)
             imgtk = ImageTk.PhotoImage(image=img)
@@ -386,6 +381,26 @@ class App(ctk.CTk):
         rect = box(bbox[0], bbox[1], bbox[2], bbox[3])
         inter = poly.intersection(rect)
         return inter.area
+
+    def is_bbox_in_polygon(self, bbox, polygon, threshold=0.7):
+        """
+        bbox: (x1, y1, x2, y2)
+        polygon: [(x, y), ...]
+        threshold: oran (varsayılan 0.7)
+        """
+        box_area = max(1, (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]))
+        inter_area = self.bbox_polygon_intersection_area(bbox, polygon)
+        return (box_area > 0) and (inter_area / box_area >= threshold)
+
+    def get_frame_and_resize(self):
+        ret, frame = self.cap.read()
+        if not ret:
+            return None, None
+        frame = cv2.flip(frame, 1)
+        label_w = self.image_label.winfo_width()
+        label_h = self.image_label.winfo_height()
+        frame = cv2.resize(frame, (label_w, label_h))
+        return frame, (label_w, label_h)
 
     def on_search(self, event=None):
         query = self.search_entry.get().strip().lower()
