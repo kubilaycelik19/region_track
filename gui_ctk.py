@@ -8,6 +8,8 @@ from face_recog import FaceRecognition
 from tkinter import messagebox
 from object_detect import detect_objects
 import time
+import numpy as np
+from shapely.geometry import Polygon, box
 
 # Alan listesi için özel widget sınıfı
 class AreaListBox(ctk.CTkFrame):
@@ -83,6 +85,7 @@ class App(ctk.CTk):
         self.last_area_for_person = {}
         self.fr = FaceRecognition()
         self.last_seen_people = []  # Her alan için [{isim: zaman}]
+        self.id_to_name = {}  # person_id -> isim eşleştirmesi
         
         # Event ve UI güncellemelerinin başlatılması
         self.bind_events()
@@ -190,61 +193,61 @@ class App(ctk.CTk):
             if self.detect_mode:
                 # Object detection sonuçlarını çiz
                 objects = detect_objects(frame)
-                person_boxes_in_area = []
+                person_ids_in_area = [[] for _ in self.polygons]  # Her alan için person id listesi
                 for class_id, class_name, score, (x1, y1, x2, y2), track_id in objects:
                     x1_disp = int(x1 * label_w / frame.shape[1])
                     x2_disp = int(x2 * label_w / frame.shape[1])
                     y1_disp = int(y1 * label_h / frame.shape[0])
                     y2_disp = int(y2 * label_h / frame.shape[0])
-                    show_object = False
-                    for poly in self.polygons:
+                    box_area = max(1, (x2_disp - x1_disp) * (y2_disp - y1_disp))
+                    in_any_poly = False
+                    for poly_idx, poly in enumerate(self.polygons):
                         disp_poly = [ (int(x*label_w), int(y*label_h)) for (x, y) in poly ]
-                        poly_xs = [p[0] for p in disp_poly]
-                        poly_ys = [p[1] for p in disp_poly]
-                        poly_bbox = (min(poly_xs), min(poly_ys), max(poly_xs), max(poly_ys))
-                        inter_area = self.intersection_area((x1_disp, y1_disp, x2_disp, y2_disp), poly_bbox)
-                        box_area = max(1, (x2_disp - x1_disp) * (y2_disp - y1_disp))
+                        inter_area = self.bbox_polygon_intersection_area((x1_disp, y1_disp, x2_disp, y2_disp), disp_poly)
                         if box_area > 0 and inter_area / box_area >= 0.7:
-                            show_object = True
+                            in_any_poly = True
+                            # Sadece person için, ID'yi ilgili alana ekle
+                            if class_name == 'person' and track_id is not None:
+                                person_ids_in_area[poly_idx].append(track_id)
                             break
-                    if not show_object:
-                        continue
+                    if not in_any_poly:
+                        continue  # Alan dışında, hiçbir şey çizme
                     color = (0,255,0,180) if class_name == 'person' else (255,128,0,180)
                     draw.rectangle([x1_disp, y1_disp, x2_disp, y2_disp], outline=color, width=3)
                     label = f"{class_name} {score*100:.1f}%"
                     if track_id is not None:
                         label += f" ID:{track_id}"
                     draw.text((x1_disp+2, y1_disp+2), label, fill=(255,255,255,255))
-                    # Sadece person kutuları için, kutunun merkezi bir polygonun içindeyse yüz tanıma yapılacak
-                    if class_name == 'person':
-                        cx = (x1_disp + x2_disp) // 2
-                        cy = (y1_disp + y2_disp) // 2
-                        for poly in self.polygons:
-                            if self.point_in_polygon((cx, cy), [(int(x*label_w), int(y*label_h)) for (x, y) in poly]):
-                                person_boxes_in_area.append((x1_disp, y1_disp, x2_disp, y2_disp))
+                # Her person kutusu için yüz tanıma yap (sadece alan içindekiler için)
+                for class_id, class_name, score, (x1, y1, x2, y2), track_id in objects:
+                    if class_name == 'person' and track_id is not None:
+                        x1_disp = int(x1 * label_w / frame.shape[1])
+                        x2_disp = int(x2 * label_w / frame.shape[1])
+                        y1_disp = int(y1 * label_h / frame.shape[0])
+                        y2_disp = int(y2 * label_h / frame.shape[0])
+                        box_area = max(1, (x2_disp - x1_disp) * (y2_disp - y1_disp))
+                        in_any_poly = False
+                        for poly_idx, poly in enumerate(self.polygons):
+                            disp_poly = [ (int(x*label_w), int(y*label_h)) for (x, y) in poly ]
+                            inter_area = self.bbox_polygon_intersection_area((x1_disp, y1_disp, x2_disp, y2_disp), disp_poly)
+                            if box_area > 0 and inter_area / box_area >= 0.7:
+                                in_any_poly = True
                                 break
-                # Sadece alan içindeki person kutuları için yüz tanıma yap
-                detected_people = []
-                for (x1, y1, x2, y2) in person_boxes_in_area:
-                    # Sadece kutunun içindeki bölgeyi kırp
-                    face_crop = frame[y1:y2, x1:x2]
-                    # Yüz tanıma fonksiyonunu kırpılmış bölgede uygula
-                    faces = self.fr.recognize_faces(face_crop)
-                    for name, _, (top, right, bottom, left) in faces:
-                        # Kırpılmış kutudan orijinal frame'e koordinatları çevir
-                        abs_top = y1 + top
-                        abs_right = x1 + right
-                        abs_bottom = y1 + bottom
-                        abs_left = x1 + left
-                        cx = (abs_left + abs_right) // 2
-                        cy = (abs_top + abs_bottom) // 2
-                        detected_people.append((name, (cx, cy), (abs_top, abs_right, abs_bottom, abs_left)))
-                        # Kutu ve isim çiz
-                        draw.rectangle([abs_left, abs_top, abs_right, abs_bottom], outline=(0,255,255,180), width=2)
-                        draw.text((abs_left+2, abs_top-18), name, fill=(255,255,0,255))
-                # Sadece tanınan kişiler alan listesine eklensin
-                detected_people_for_area = [(name, (cx, cy)) for name, (cx, cy), _ in detected_people if name != "Unknown"]
-                self.update_area_people(detected_people_for_area)
+                        if not in_any_poly:
+                            continue  # Alan dışında, yüz tanıma yapma
+                        face_crop = frame[y1_disp:y2_disp, x1_disp:x2_disp]
+                        faces = self.fr.recognize_faces(face_crop)
+                        for name, _, (top, right, bottom, left) in faces:
+                            if name != "Unknown":
+                                self.id_to_name[track_id] = name  # ID'ye isim ata
+                            abs_top = y1_disp + top
+                            abs_right = x1_disp + right
+                            abs_bottom = y1_disp + bottom
+                            abs_left = x1_disp + left
+                            draw.rectangle([abs_left, abs_top, abs_right, abs_bottom], outline=(0,255,255,180), width=2)
+                            draw.text((abs_left+2, abs_top-18), name, fill=(255,255,0,255))
+                # Alanlardaki kişi listelerini güncelle
+                self.update_area_people_v2(person_ids_in_area)
             imgtk = ImageTk.PhotoImage(image=img)
             self.image_label.imgtk = imgtk
             self.image_label.configure(image=imgtk)
@@ -282,7 +285,7 @@ class App(ctk.CTk):
             for name in current_names:
                 last_seen[name] = now
             # 1 saniyeden eski olanları sil
-            to_remove = [n for n, t in last_seen.items() if now - t > 3.0]
+            to_remove = [n for n, t in last_seen.items() if now - t > 15.0]
             for n in to_remove:
                 del last_seen[n]
             # Alan kutusunu güncelle
@@ -377,6 +380,13 @@ class App(ctk.CTk):
         interH = max(0, yB - yA)
         return interW * interH
 
+    def bbox_polygon_intersection_area(self, bbox, polygon):
+        # bbox: (x1, y1, x2, y2), polygon: [(x, y), ...]
+        poly = Polygon(polygon)
+        rect = box(bbox[0], bbox[1], bbox[2], bbox[3])
+        inter = poly.intersection(rect)
+        return inter.area
+
     def on_search(self, event=None):
         query = self.search_entry.get().strip().lower()
         self.search_results_box.delete(0, tk.END)
@@ -393,6 +403,14 @@ class App(ctk.CTk):
             for res in results:
                 self.search_results_box.insert(tk.END, res)
         # Sonuç yoksa kutu boş kalacak, ama kaybolmayacak
+
+    def update_area_people_v2(self, person_ids_in_area):
+        # Her alan için, o anda bölgede olan person ID'lerin isimlerini göster
+        for i, area_box in enumerate(self.area_listboxes):
+            area_box.clear_people()
+            for pid in person_ids_in_area[i]:
+                name = self.id_to_name.get(pid, f"ID:{pid}")
+                area_box.add_person(name)
 
 if __name__ == "__main__":
     ctk.set_appearance_mode("dark")

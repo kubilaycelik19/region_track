@@ -81,9 +81,10 @@ class FaceRecognition:
         frame = preprocess_image(frame)  # Ön işlem uygula
         small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)  # Küçült
         rgb_small_frame = small_frame[:, :, ::-1]  # BGR'den RGB'ye çevir
+        blurred_small_frame = cv2.GaussianBlur(rgb_small_frame, (15, 15), 0)
 
-        face_locations = face_recognition.face_locations(rgb_small_frame)
-        face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
+        face_locations = face_recognition.face_locations(blurred_small_frame)
+        face_encodings = face_recognition.face_encodings(blurred_small_frame, face_locations)
 
         for face_encoding, face_location in zip(face_encodings, face_locations):
             matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding)
